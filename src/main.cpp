@@ -25,9 +25,8 @@ AesCipherParams CreateChiperParamsFromPassword(std::string_view password) {
                                 reinterpret_cast<const unsigned char *>(password.data()), password.size(), 1,
                                 params.key.data(), params.iv.data());
 
-    if (result == 0) {
+    if (result == 0)
         throw std::runtime_error{"Failed to create a key from password"};
-    }
 
     return params;
 }
@@ -78,6 +77,8 @@ int main(int argc, char *argv[]) {
         //
 
         CryptoGuard::ProgramOptions options;
+        if (!options.Parse(argc, argv))
+            return 1;
 
         CryptoGuard::CryptoGuardCtx cryptoCtx;
 
@@ -98,7 +99,6 @@ int main(int argc, char *argv[]) {
         default:
             throw std::runtime_error{"Unsupported command"};
         }
-
     } catch (const std::exception &e) {
         std::print(std::cerr, "Error: {}\n", e.what());
         return 1;

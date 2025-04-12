@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
 namespace CryptoGuard {
@@ -22,7 +23,6 @@ public:
 
 private:
     class Impl;
-    Impl *pImpl_;
+    std::unique_ptr<Impl> pImpl_;
 };
-
 }  // namespace CryptoGuard
