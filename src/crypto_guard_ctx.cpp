@@ -1,6 +1,7 @@
 #include "crypto_guard_ctx.h"
 #include <array>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
 #include <openssl/err.h>
 #include <openssl/evp.h>
@@ -51,12 +52,21 @@ size_t StreamCounter(std::istream &in) {
     in.seekg(0, std::ios::beg);
     return count;
 }
+
+std::string BytesToHexString(const std::vector<std::byte> &data) {
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (std::byte b : data)
+        oss << std::setw(2) << static_cast<int>(std::to_integer<unsigned char>(b));
+    return oss.str();
+}
 }  // end namespace details
 #pragma endregion
 //////////////////////////////////////////////////////////////////////////////////
 #pragma region CryptoGuardCtx::Impl
 constexpr size_t IN_BUF_SIZE = 1024;
 constexpr size_t OUT_BUF_SIZE = IN_BUF_SIZE + EVP_MAX_BLOCK_LENGTH;
+constexpr size_t BUF_SIZE = 1024;
 
 class CryptoGuardCtx::Impl {
 public:
@@ -67,10 +77,8 @@ public:
     Impl(const Impl &) = delete;
     Impl &operator=(const Impl &) = delete;
 
-    Impl(std::iostream &in, std::string_view password, Action iAction) : _ctx(nullptr), _ready(false) {
-        OpenSSL_add_all_algorithms();
+    Impl(std::iostream &in, std::string_view password, Action iAction) : Impl() {
         auto params = details::CreateChiperParamsFromPassword(password);
-
         switch (iAction) {
         case Action::Encrypt:
             params.encrypt = 1;
@@ -81,9 +89,8 @@ public:
         default:
             throw std::runtime_error("Wrong action");
         }
-        params.encrypt = iAction == Action::Encrypt ? 1 : 0;
 
-        _ctx.reset(EVP_CIPHER_CTX_new());
+        CtxPtrED _ctx(EVP_CIPHER_CTX_new());
         if (!_ctx)
             throw std::runtime_error(std::format("Failed to create EVP context: {}", details::GetErrorInfo()));
 
@@ -117,6 +124,34 @@ public:
         _out.insert(_out.end(), outBuf.begin(), outBuf.begin() + outLen);
         _ready = true;
     }
+    Impl(std::iostream &in) : Impl() {
+        std::array<std::byte, BUF_SIZE> buffer;
+        std::array<std::byte, EVP_MAX_MD_SIZE> hash;
+        unsigned int hashLen = 0;
+
+        CtxPtrMD ctx(EVP_MD_CTX_new());
+        if (!ctx)
+            throw std::runtime_error("Failed to create EVP_MD_CTX");
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr) != 1)
+            throw std::runtime_error(std::format("EVP_DigestInit_ex failed: {}", details::GetErrorInfo()));
+
+        do {
+            in.read(reinterpret_cast<char *>(buffer.data()), buffer.size());
+            if (std::streamsize readLen = in.gcount()) {
+                if (EVP_DigestUpdate(ctx.get(), buffer.data(), readLen) != 1)
+                    throw std::runtime_error(std::format("EVP_DigestUpdate failed: {}", details::GetErrorInfo()));
+            }
+        } while (in && !in.eof());
+        if (in.bad())
+            throw std::runtime_error("Stream read error");
+
+        if (EVP_DigestFinal_ex(ctx.get(), reinterpret_cast<unsigned char *>(hash.data()), &hashLen) != 1)
+            throw std::runtime_error(std::format("EVP_DigestFinal_ex failed: {}", details::GetErrorInfo()));
+
+        _out.insert(_out.end(), hash.begin(), hash.begin() + hashLen);
+        _ready = true;
+    }
 
     bool IsReady() const noexcept { return _ready; }
 
@@ -126,17 +161,12 @@ public:
     }
 
 private:
-    struct Deleter {
-        void operator()(EVP_CIPHER_CTX *ptr) {
-            EVP_CIPHER_CTX_free(ptr);
-            EVP_cleanup();
-        }
-    };
+    Impl() : _ready(false) {}
 
-    using CtxPtr = std::unique_ptr<EVP_CIPHER_CTX, Deleter>;
+    using CtxPtrED = std::unique_ptr<EVP_CIPHER_CTX, decltype([](EVP_CIPHER_CTX *ptr) { EVP_CIPHER_CTX_free(ptr); })>;
+    using CtxPtrMD = std::unique_ptr<EVP_MD_CTX, decltype([](EVP_MD_CTX *ptr) { EVP_MD_CTX_free(ptr); })>;
 
     std::vector<std::byte> _out;
-    CtxPtr _ctx;
     bool _ready;
 };
 #pragma endregion
@@ -163,7 +193,15 @@ void CryptoGuardCtx::EncryptFile(std::iostream &inStream, std::iostream &outStre
 void CryptoGuardCtx::DecryptFile(std::iostream &inStream, std::iostream &outStream, std::string_view password) {
     EDProcess(inStream, outStream, password, Action::Decrypt);
 }
-std::string CryptoGuardCtx::CalculateChecksum(std::iostream &inStream) { return "NOT_IMPLEMENTED"; }
+std::string CryptoGuardCtx::CalculateChecksum(std::iostream &inStream) {
+    std::string res;
+    if (!details::StreamCounter(inStream))
+        throw std::runtime_error("Empty input");
+    pImpl_ = std::make_unique<Impl>(inStream);
+    if (pImpl_->IsReady())
+        res = details::BytesToHexString(pImpl_->GetResult());
+    return res;
+}
 #pragma endregion
 }  // namespace CryptoGuard
 #pragma endregion

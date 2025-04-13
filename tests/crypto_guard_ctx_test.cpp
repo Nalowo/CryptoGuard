@@ -141,3 +141,42 @@ TEST(CryptoGuardCtxTests, ThrowsOnEmptyInputDecryption) {
         },
         std::runtime_error);
 }
+
+TEST(CryptoGuardCtxChecksumTests, CalculateChecksum_ValidInput_ReturnsExpectedHash) {
+    std::stringstream input("hello world");
+    CryptoGuardCtx ctx;
+    std::string checksum = ctx.CalculateChecksum(input);
+
+    // Проверка контрольной суммы "hello world" в hex (sha256)
+    EXPECT_EQ(checksum, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
+}
+
+TEST(CryptoGuardCtxChecksumTests, CalculateChecksum_EmptyInput_ThrowsException) {
+    std::stringstream input("");
+    CryptoGuardCtx ctx;
+    EXPECT_THROW({ ctx.CalculateChecksum(input); }, std::runtime_error);
+}
+
+TEST(CryptoGuardCtxChecksumTests, CalculateChecksum_SameInput_SameChecksum) {
+    std::stringstream input1("repeatable input");
+    std::stringstream input2("repeatable input");
+
+    CryptoGuardCtx ctx1;
+    CryptoGuardCtx ctx2;
+
+    std::string hash1 = ctx1.CalculateChecksum(input1);
+    std::string hash2 = ctx2.CalculateChecksum(input2);
+
+    EXPECT_EQ(hash1, hash2);
+}
+
+TEST(CryptoGuardCtxChecksumTests, CalculateChecksum_DifferentInputs_DifferentChecksums) {
+    std::stringstream input1("input A");
+    std::stringstream input2("input B");
+
+    CryptoGuardCtx ctx;
+    std::string hash1 = ctx.CalculateChecksum(input1);
+    std::string hash2 = ctx.CalculateChecksum(input2);
+
+    EXPECT_NE(hash1, hash2);
+}
