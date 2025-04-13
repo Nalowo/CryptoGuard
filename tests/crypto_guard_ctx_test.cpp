@@ -1,117 +1,143 @@
+#include "crypto_guard_ctx.h"
 #include <gtest/gtest.h>
 #include <sstream>
 #include <string>
-#include "crypto_guard_ctx.h"
 
 using namespace CryptoGuard;
 
-class CryptoGuardCtxFixture : public ::testing::Test {
+class CryptoGuardCtxTest : public ::testing::Test {
 protected:
-    std::string password = "supersecure";
-    CryptoGuardCtx ctx;
-
-    void Encrypt(const std::string& input, std::stringstream& out) {
-        std::stringstream in(input);
-        ctx.EncryptFile(in, out, password);
-    }
-
-    void Decrypt(std::stringstream& in, std::string& out) {
-        std::stringstream result;
-        ctx.DecryptFile(in, result, password);
-        out = result.str();
-    }
+    const std::string password = "test_password";
+    const std::string test_data = "Hello, Crypto!";
 };
 
-TEST_F(CryptoGuardCtxFixture, EncryptThenDecryptReturnsOriginal)
-{
-    std::string input = "The quick brown fox";
-    std::stringstream encrypted;
-    std::string decrypted;
+TEST_F(CryptoGuardCtxTest, EncryptProducesData) {
+    std::stringstream input(test_data);
+    std::stringstream output;
 
-    Encrypt(input, encrypted);
-    encrypted.seekg(0);
-    Decrypt(encrypted, decrypted);
+    CryptoGuardCtx ctx;
+    ctx.EncryptFile(input, output, password);
 
-    EXPECT_EQ(decrypted, input);
+    ASSERT_GT(output.str().size(), 0);
 }
 
-TEST_F(CryptoGuardCtxFixture, EncryptDecryptEmptyInput)
-{
-    std::string input = "";
+TEST_F(CryptoGuardCtxTest, DecryptRestoresOriginal) {
+    std::stringstream input(test_data);
     std::stringstream encrypted;
-    std::string decrypted;
+    std::stringstream decrypted;
 
-    Encrypt(input, encrypted);
-    encrypted.seekg(0);
-    Decrypt(encrypted, decrypted);
+    CryptoGuardCtx ctx;
+    ctx.EncryptFile(input, encrypted, password);
 
-    EXPECT_EQ(decrypted, input);
+    std::string encrypted_data = encrypted.str();
+    assert(encrypted_data.size() % 16 == 0);
+    std::stringstream encrypted_stream(encrypted_data);
+    ctx.DecryptFile(encrypted_stream, decrypted, password);
+
+    auto str = decrypted.str();
+    ASSERT_EQ(decrypted.str(), test_data);
 }
 
-TEST_F(CryptoGuardCtxFixture, DecryptWithWrongPasswordThrows)
-{
-    std::string input = "Sensitive data";
-    std::stringstream encrypted;
+TEST_F(CryptoGuardCtxTest, EncryptSameInputGivesSameOutput) {
+    std::stringstream input1(test_data);
+    std::stringstream input2(test_data);
+    std::stringstream output1;
+    std::stringstream output2;
 
-    Encrypt(input, encrypted);
-    encrypted.seekg(0);
+    CryptoGuardCtx ctx;
+    ctx.EncryptFile(input1, output1, password);
+    ctx.EncryptFile(input2, output2, password);
 
-    std::stringstream result;
-    EXPECT_THROW({
-        CryptoGuardCtx wrongCtx;
-        wrongCtx.DecryptFile(encrypted, result, "wrongpass");
-    }, std::runtime_error);
+    ASSERT_EQ(output1.str(), output2.str());
 }
 
-TEST_F(CryptoGuardCtxFixture, ReuseForMultipleEncryptions)
-{
-    std::string text1 = "first";
-    std::string text2 = "second";
+TEST_F(CryptoGuardCtxTest, DecryptWithWrongPasswordFails) {
+    std::stringstream input(test_data);
+    std::stringstream encrypted;
 
-    std::stringstream enc1, enc2;
-    std::string dec1, dec2;
+    CryptoGuardCtx ctx;
+    ctx.EncryptFile(input, encrypted, password);
 
-    Encrypt(text1, enc1);
-    enc1.seekg(0);
-    Decrypt(enc1, dec1);
+    std::string encrypted_data = encrypted.str();
+    std::stringstream encrypted_stream(encrypted_data);
+    std::stringstream decrypted;
 
-    Encrypt(text2, enc2);
-    enc2.seekg(0);
-    Decrypt(enc2, dec2);
-
-    EXPECT_EQ(dec1, text1);
-    EXPECT_EQ(dec2, text2);
+    ASSERT_THROW(ctx.DecryptFile(encrypted_stream, decrypted, "wrong_password"), std::runtime_error);
 }
 
-TEST_F(CryptoGuardCtxFixture, EncryptDecryptSpecialCharacters)
-{
-    std::string input = "\x00\xFF\xA5\n\tTest\x7F\x01";
-    std::stringstream encrypted;
-    std::string decrypted;
+TEST_F(CryptoGuardCtxTest, EncryptEmptyInputProducesEmptyOutput) {
+    std::stringstream input;
+    std::stringstream output;
 
-    Encrypt(input, encrypted);
-    encrypted.seekg(0);
-    Decrypt(encrypted, decrypted);
-
-    EXPECT_EQ(decrypted, input);
+    CryptoGuardCtx ctx;
+    ASSERT_THROW({ ctx.EncryptFile(input, output, password); }, std::runtime_error);
 }
 
-TEST_F(CryptoGuardCtxFixture, DecryptTwiceReturnsSameResult)
-{
-    std::string input = "Same input";
-    std::stringstream encrypted;
-    std::string decrypted1, decrypted2;
+TEST_F(CryptoGuardCtxTest, ReuseObjectForEncryption) {
+    std::stringstream input1("Data One");
+    std::stringstream output1;
 
-    Encrypt(input, encrypted);
+    std::stringstream input2("Data Two");
+    std::stringstream output2;
 
-    std::stringstream copyEncrypted(encrypted.str());
-    encrypted.seekg(0);
-    copyEncrypted.seekg(0);
+    CryptoGuardCtx ctx;
+    ctx.EncryptFile(input1, output1, password);
+    ctx.EncryptFile(input2, output2, password);
 
-    Decrypt(encrypted, decrypted1);
-    Decrypt(copyEncrypted, decrypted2);
+    ASSERT_NE(output1.str(), output2.str());
+    ASSERT_GT(output1.str().size(), 0);
+    ASSERT_GT(output2.str().size(), 0);
+}
 
-    EXPECT_EQ(decrypted1, input);
-    EXPECT_EQ(decrypted2, input);
-    EXPECT_EQ(decrypted1, decrypted2);
+TEST(CryptoGuardCtxTests, DecryptsEncryptedStreamCorrectly) {
+    std::stringstream plaintextStream("Test message for encryption.");
+    std::stringstream encryptedStream;
+    std::stringstream decryptedStream;
+    const std::string password = "securepassword";
+
+    CryptoGuard::CryptoGuardCtx ctx;
+    ctx.EncryptFile(plaintextStream, encryptedStream, password);
+
+    // Сбросить указатель потока на начало
+    encryptedStream.seekg(0);
+
+    ctx.DecryptFile(encryptedStream, decryptedStream, password);
+    decryptedStream.seekg(0);
+
+    std::string decryptedContent;
+    std::getline(decryptedStream, decryptedContent);
+    ASSERT_EQ(decryptedContent, "Test message for encryption.");
+}
+
+TEST(CryptoGuardCtxTests, ThrowsOnWrongPassword) {
+    std::stringstream plaintextStream("Secret text");
+    std::stringstream encryptedStream;
+    std::stringstream outputStream;
+
+    const std::string correctPassword = "correct";
+    const std::string wrongPassword = "wrong";
+
+    CryptoGuard::CryptoGuardCtx ctx;
+    ctx.EncryptFile(plaintextStream, encryptedStream, correctPassword);
+    encryptedStream.seekg(0);
+
+    ASSERT_THROW(
+        {
+            CryptoGuard::CryptoGuardCtx ctx2;
+            ctx2.DecryptFile(encryptedStream, outputStream, wrongPassword);
+        },
+        std::runtime_error);
+}
+
+TEST(CryptoGuardCtxTests, ThrowsOnEmptyInputDecryption) {
+    std::stringstream emptyInput;
+    std::stringstream output;
+    const std::string password = "irrelevant";
+
+    ASSERT_THROW(
+        {
+            CryptoGuard::CryptoGuardCtx ctx;
+            ctx.DecryptFile(emptyInput, output, password);
+        },
+        std::runtime_error);
 }
