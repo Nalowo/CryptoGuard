@@ -22,9 +22,9 @@ public:
     bool Parse(int argc, char *argv[]);
 
     COMMAND_TYPE GetCommand() const { return command_; }
-    std::string GetInputFile() const { return inputFile_; }
-    std::string GetOutputFile() const { return outputFile_; }
-    std::string GetPassword() const { return password_; }
+    std::string_view GetInputFile() const { return inputFile_; }
+    std::string_view GetOutputFile() const { return outputFile_; }
+    std::string_view GetPassword() const { return password_; }
 
 private:
     COMMAND_TYPE command_;
