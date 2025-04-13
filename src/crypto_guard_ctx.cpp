@@ -46,13 +46,19 @@ std::string GetErrorInfo() {
 }
 
 size_t StreamCounter(std::istream &in) {
-    size_t count = 0;
+    if (!in)
+        return 0;
+
+    auto originalPos = in.tellg();
+    if (originalPos == -1) {
+        throw std::runtime_error("Stream does not support seeking");
+    }
+
     in.seekg(0, std::ios::end);
-    count = in.tellg();
-    in.seekg(0, std::ios::beg);
+    size_t count = in.tellg();
+    in.seekg(originalPos);
     return count;
 }
-
 std::string BytesToHexString(const std::vector<std::byte> &data) {
     std::ostringstream oss;
     oss << std::hex << std::setfill('0');
@@ -77,7 +83,7 @@ public:
     Impl(const Impl &) = delete;
     Impl &operator=(const Impl &) = delete;
 
-    Impl(std::iostream &in, std::string_view password, Action iAction) : Impl() {
+    Impl(std::istream &in, std::string_view password, Action iAction) : Impl() {
         auto params = details::CreateChiperParamsFromPassword(password);
         switch (iAction) {
         case Action::Encrypt:
@@ -124,7 +130,7 @@ public:
         _out.insert(_out.end(), outBuf.begin(), outBuf.begin() + outLen);
         _ready = true;
     }
-    Impl(std::iostream &in) : Impl() {
+    Impl(std::istream &in) : Impl() {
         std::array<std::byte, BUF_SIZE> buffer;
         std::array<std::byte, EVP_MAX_MD_SIZE> hash;
         unsigned int hashLen = 0;
@@ -175,7 +181,7 @@ private:
 CryptoGuardCtx::CryptoGuardCtx() : pImpl_(nullptr) {}
 CryptoGuardCtx::~CryptoGuardCtx() = default;
 
-void CryptoGuardCtx::EDProcess(std::iostream &inStream, std::iostream &outStream, std::string_view password,
+void CryptoGuardCtx::EDProcess(std::istream &inStream, std::ostream &outStream, std::string_view password,
                                Action iAction) {
     if (!details::StreamCounter(inStream))
         throw std::runtime_error("Empty input");
@@ -187,13 +193,13 @@ void CryptoGuardCtx::EDProcess(std::iostream &inStream, std::iostream &outStream
     }
 }
 
-void CryptoGuardCtx::EncryptFile(std::iostream &inStream, std::iostream &outStream, std::string_view password) {
+void CryptoGuardCtx::EncryptFile(std::istream &inStream, std::ostream &outStream, std::string_view password) {
     EDProcess(inStream, outStream, password, Action::Encrypt);
 }
-void CryptoGuardCtx::DecryptFile(std::iostream &inStream, std::iostream &outStream, std::string_view password) {
+void CryptoGuardCtx::DecryptFile(std::istream &inStream, std::ostream &outStream, std::string_view password) {
     EDProcess(inStream, outStream, password, Action::Decrypt);
 }
-std::string CryptoGuardCtx::CalculateChecksum(std::iostream &inStream) {
+std::string CryptoGuardCtx::CalculateChecksum(std::istream &inStream) {
     std::string res;
     if (!details::StreamCounter(inStream))
         throw std::runtime_error("Empty input");

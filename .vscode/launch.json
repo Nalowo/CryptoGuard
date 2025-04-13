@@ -34,10 +34,23 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/CryptoGuard",
             "args": [
-                "-i",
-                "input.txt",
-                "--command",
-                "checksum"
+                // "-i",
+                // "data.txt",
+                // "-o",
+                // "out.txt",
+                // "-p",
+                // "12345",
+                // "--command",
+                // "encrypt"
+                
+                // "-i",
+                // "out.txt",
+                // "-o",
+                // "out1.txt",
+                // "-p",
+                // "12345",
+                // "--command",
+                // "decrypt"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",

@@ -14,7 +14,6 @@ namespace details {
 using namespace std::literals;
 namespace fs = std::filesystem;
 
-template <typename... T>
 fs::path IsValidAndCleanPath(std::string_view inputPath) {
     fs::path res = fs::canonical(fs::path(inputPath));
 
@@ -28,11 +27,14 @@ fs::path IsValidAndCleanPath(std::string_view inputPath) {
 }
 
 std::fstream OpenFile(std::string_view iPath, std::ios::openmode iMode) {
-    namespace fs = std::filesystem;
-    std::fstream res(IsValidAndCleanPath(iPath), iMode);
-    res.exceptions(std::ofstream::failbit | std::ofstream::badbit);
-    if (!res)
-        throw std::runtime_error(std::format("Can`t open file: {}"sv, iPath));
+    fs::path path = iPath;
+    if (iMode & std::ios::in)
+        path = IsValidAndCleanPath(iPath);
+
+    std::fstream res(path, iMode);
+    if (!res.is_open())
+        throw std::runtime_error(std::format("Can not open file: "sv, iPath));
+
     return res;
 }
 }  // namespace details
