@@ -14,7 +14,7 @@ namespace details {
 using namespace std::literals;
 namespace fs = std::filesystem;
 
-fs::path IsValidAndCleanPath(std::string_view inputPath) {
+fs::path GetValidAndCleanPath(std::string_view inputPath) {
     fs::path res = fs::canonical(fs::path(inputPath));
 
     if (!fs::exists(res))
@@ -29,7 +29,7 @@ fs::path IsValidAndCleanPath(std::string_view inputPath) {
 std::fstream OpenFile(std::string_view iPath, std::ios::openmode iMode) {
     fs::path path = iPath;
     if (iMode & std::ios::in)
-        path = IsValidAndCleanPath(iPath);
+        path = GetValidAndCleanPath(iPath);
 
     std::fstream res(path, iMode);
     if (!res.is_open())

@@ -30,7 +30,7 @@ TEST_F(CryptoGuardCtxTest, DecryptRestoresOriginal) {
     ctx.EncryptFile(input, encrypted, password);
 
     std::string encrypted_data = encrypted.str();
-    assert(encrypted_data.size() % 16 == 0);
+    ASSERT_EQ(encrypted_data.size() % 16, 0);
     std::stringstream encrypted_stream(encrypted_data);
     ctx.DecryptFile(encrypted_stream, decrypted, password);
 

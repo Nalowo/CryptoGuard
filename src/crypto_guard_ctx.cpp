@@ -45,7 +45,7 @@ std::string GetErrorInfo() {
     return res;
 }
 
-size_t StreamCounter(std::istream &in) {
+size_t GetStreamSize(std::istream &in) {
     if (!in)
         return 0;
 
@@ -76,6 +76,7 @@ constexpr size_t BUF_SIZE = 1024;
 
 class CryptoGuardCtx::Impl {
 public:
+    Impl() = default;
     Impl(Impl &&) = default;
     Impl &operator=(Impl &&) = default;
     ~Impl() = default;
@@ -83,7 +84,8 @@ public:
     Impl(const Impl &) = delete;
     Impl &operator=(const Impl &) = delete;
 
-    Impl(std::istream &in, std::string_view password, Action iAction) : Impl() {
+    std::vector<std::byte> EncryptOrDecryptProcess(std::istream &in, std::string_view password, Action iAction) {
+        std::vector<std::byte> res;
         auto params = details::CreateChiperParamsFromPassword(password);
         switch (iAction) {
         case Action::Encrypt:
@@ -93,7 +95,7 @@ public:
             params.encrypt = 0;
             break;
         default:
-            throw std::runtime_error("Wrong action");
+            throw std::runtime_error("Internal error: Unknown action ");
         }
 
         CtxPtrED _ctx(EVP_CIPHER_CTX_new());
@@ -118,19 +120,21 @@ public:
                                      reinterpret_cast<unsigned char *>(inBuf.data()), static_cast<int>(readLen)) != 1)
                     throw std::runtime_error(std::format("EVP_CipherUpdate failed: {}", details::GetErrorInfo()));
 
-                _out.insert(_out.end(), outBuf.begin(), outBuf.begin() + outLen);
+                res.insert(res.end(), outBuf.begin(), outBuf.begin() + outLen);
             }
         } while (in && !in.eof());
         if (in.bad())
-            throw std::runtime_error("Stream read error");
+            throw std::runtime_error("Internal error: Input stream read error");
 
         if (EVP_CipherFinal_ex(_ctx.get(), reinterpret_cast<unsigned char *>(outBuf.data()), &outLen) != 1)
             throw std::runtime_error(std::format("EVP_CipherFinal_ex failed: {}", details::GetErrorInfo()));
 
-        _out.insert(_out.end(), outBuf.begin(), outBuf.begin() + outLen);
-        _ready = true;
+        res.insert(res.end(), outBuf.begin(), outBuf.begin() + outLen);
+        return res;
     }
-    Impl(std::istream &in) : Impl() {
+
+    std::vector<std::byte> ChecksumProcess(std::istream &in) {
+        std::vector<std::byte> res;
         std::array<std::byte, BUF_SIZE> buffer;
         std::array<std::byte, EVP_MAX_MD_SIZE> hash;
         unsigned int hashLen = 0;
@@ -150,47 +154,32 @@ public:
             }
         } while (in && !in.eof());
         if (in.bad())
-            throw std::runtime_error("Stream read error");
+            throw std::runtime_error("Internal error: Input stream read error");
 
         if (EVP_DigestFinal_ex(ctx.get(), reinterpret_cast<unsigned char *>(hash.data()), &hashLen) != 1)
             throw std::runtime_error(std::format("EVP_DigestFinal_ex failed: {}", details::GetErrorInfo()));
 
-        _out.insert(_out.end(), hash.begin(), hash.begin() + hashLen);
-        _ready = true;
-    }
-
-    bool IsReady() const noexcept { return _ready; }
-
-    std::vector<std::byte> &&GetResult() noexcept {
-        _ready = false;
-        return std::move(_out);
+        res.insert(res.end(), hash.begin(), hash.begin() + hashLen);
+        return res;
     }
 
 private:
-    Impl() : _ready(false) {}
-
     using CtxPtrED = std::unique_ptr<EVP_CIPHER_CTX, decltype([](EVP_CIPHER_CTX *ptr) { EVP_CIPHER_CTX_free(ptr); })>;
     using CtxPtrMD = std::unique_ptr<EVP_MD_CTX, decltype([](EVP_MD_CTX *ptr) { EVP_MD_CTX_free(ptr); })>;
-
-    std::vector<std::byte> _out;
-    bool _ready;
 };
 #pragma endregion
 //////////////////////////////////////////////////////////////////////////////////
 #pragma region CryptoGuardCtx
-CryptoGuardCtx::CryptoGuardCtx() : pImpl_(nullptr) {}
+CryptoGuardCtx::CryptoGuardCtx() : pImpl_(std::make_unique<Impl>()) {}
 CryptoGuardCtx::~CryptoGuardCtx() = default;
 
 void CryptoGuardCtx::EDProcess(std::istream &inStream, std::ostream &outStream, std::string_view password,
                                Action iAction) {
-    if (!details::StreamCounter(inStream))
+    if (!details::GetStreamSize(inStream))
         throw std::runtime_error("Empty input");
-    pImpl_ = std::make_unique<Impl>(inStream, password, iAction);
-    if (pImpl_->IsReady()) {
-        auto data = pImpl_->GetResult();
-        if (!data.empty())
-            outStream.write(reinterpret_cast<const char *>(data.data()), data.size());
-    }
+
+    auto data = pImpl_->EncryptOrDecryptProcess(inStream, password, iAction);
+    outStream.write(reinterpret_cast<const char *>(data.data()), data.size());
 }
 
 void CryptoGuardCtx::EncryptFile(std::istream &inStream, std::ostream &outStream, std::string_view password) {
@@ -200,13 +189,9 @@ void CryptoGuardCtx::DecryptFile(std::istream &inStream, std::ostream &outStream
     EDProcess(inStream, outStream, password, Action::Decrypt);
 }
 std::string CryptoGuardCtx::CalculateChecksum(std::istream &inStream) {
-    std::string res;
-    if (!details::StreamCounter(inStream))
+    if (!details::GetStreamSize(inStream))
         throw std::runtime_error("Empty input");
-    pImpl_ = std::make_unique<Impl>(inStream);
-    if (pImpl_->IsReady())
-        res = details::BytesToHexString(pImpl_->GetResult());
-    return res;
+    return details::BytesToHexString(pImpl_->ChecksumProcess(inStream));
 }
 #pragma endregion
 }  // namespace CryptoGuard

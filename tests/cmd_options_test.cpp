@@ -27,21 +27,22 @@ TEST_F(ProgramOptionsTest, HelpOptionPrintsHelpAndReturnsFalse) {
 TEST_F(ProgramOptionsTest, MissingCommandReturnsFalse) {
     std::vector<std::string> storage;
     auto argv = ToArgv({"CryptoGuard", "--input", "in.txt"}, storage);
-    EXPECT_FALSE(options.Parse(argv.size(), argv.data()));
+    ASSERT_THROW(
+        { options.Parse(argv.size(), argv.data()); }, boost::wrapexcept<boost::program_options::required_option>);
 }
 
 // Тест 3: Ошибка при неизвестной команде
 TEST_F(ProgramOptionsTest, InvalidCommandReturnsFalse) {
     std::vector<std::string> storage;
     auto argv = ToArgv({"CryptoGuard", "--command", "compress"}, storage);
-    EXPECT_FALSE(options.Parse(argv.size(), argv.data()));
+    ASSERT_THROW({ options.Parse(argv.size(), argv.data()); }, std::runtime_error);
 }
 
 // Тест 4: Ошибка при команде encrypt без обязательных аргументов
 TEST_F(ProgramOptionsTest, EncryptMissingArgumentsReturnsFalse) {
     std::vector<std::string> storage;
     auto argv = ToArgv({"CryptoGuard", "--command", "encrypt", "--input", "in.txt"}, storage);
-    EXPECT_FALSE(options.Parse(argv.size(), argv.data()));
+    ASSERT_THROW({ options.Parse(argv.size(), argv.data()); }, std::runtime_error);
 }
 
 // Тест 5: Успешный парсинг команды encrypt
@@ -52,9 +53,9 @@ TEST_F(ProgramOptionsTest, ValidEncryptCommandParsesCorrectly) {
         storage);
     ASSERT_TRUE(options.Parse(argv.size(), argv.data()));
     EXPECT_EQ(options.GetCommand(), ProgramOptions::COMMAND_TYPE::ENCRYPT);
-    EXPECT_EQ(options.GetInputFile(), "in.txt");
-    EXPECT_EQ(options.GetOutputFile(), "out.txt");
-    EXPECT_EQ(options.GetPassword(), "1234");
+    EXPECT_EQ(options.GetInputFile(), storage[4]);
+    EXPECT_EQ(options.GetOutputFile(), storage[6]);
+    EXPECT_EQ(options.GetPassword(), storage[8]);
 }
 
 // Тест 6: Успешный парсинг команды checksum
@@ -63,5 +64,5 @@ TEST_F(ProgramOptionsTest, ValidChecksumCommandParsesCorrectly) {
     auto argv = ToArgv({"CryptoGuard", "--command", "checksum", "--input", "data.txt"}, storage);
     ASSERT_TRUE(options.Parse(argv.size(), argv.data()));
     EXPECT_EQ(options.GetCommand(), ProgramOptions::COMMAND_TYPE::CHECKSUM);
-    EXPECT_EQ(options.GetInputFile(), "data.txt");
+    EXPECT_EQ(options.GetInputFile(), storage[4]);
 }
