@@ -15,7 +15,7 @@ using namespace std::literals;
 namespace fs = std::filesystem;
 
 fs::path GetValidAndCleanPath(std::string_view inputPath) {
-    fs::path res = fs::canonical(fs::path(inputPath));
+    fs::path res = fs::weakly_canonical(fs::path(inputPath));
 
     if (!fs::exists(res))
         throw std::runtime_error(std::format("File not exist: {}"sv, res.string()));
